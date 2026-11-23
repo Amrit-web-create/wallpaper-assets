@@ -3,15 +3,14 @@ import zipfile
 from pathlib import Path
 from urllib.parse import quote
 from PIL import Image
-from god_aliases import GOD_ALIASES
+from catalog_aliases import CATEGORY_ALIASES
 
-# Apna Cloudflare Pages / static base URL yahan set karein
 BASE_URL = "https://your-wallpaper-assets.pages.dev/walls"
 WALLS_DIR = Path("walls")
 ZIPS_DIR = Path("incoming_zips")
 OUT_JSON = Path("wallpapers.json")
 
-IMAGE_EXTS = {".jpg", ".jpeg"}
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 def extract_all_zips() -> int:
@@ -20,7 +19,7 @@ def extract_all_zips() -> int:
     if ZIPS_DIR.exists():
         zip_candidates.extend(ZIPS_DIR.glob("*.zip"))
 
-    extracted_count = 0
+    extracted_files = 0
     for zip_path in sorted(set(zip_candidates)):
         if not zip_path.is_file():
             continue
@@ -35,10 +34,8 @@ def extract_all_zips() -> int:
                         continue
 
                     parts = list(rel.parts)
-                    # Ignore macOS junk files
                     if any(p.startswith("__MACOSX") or p == ".DS_Store" for p in parts):
                         continue
-                    # Agar zip ke andar pehle se 'walls/' folder hai toh strip karein
                     if parts and parts[0].lower() == "walls":
                         parts = parts[1:]
                     if not parts:
@@ -48,19 +45,19 @@ def extract_all_zips() -> int:
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     with zf.open(member) as src, open(dest, "wb") as dst:
                         dst.write(src.read())
-                    extracted_count += 1
+                    extracted_files += 1
 
             zip_path.unlink(missing_ok=True)
-            print(f"[EXTRACTED & REMOVED ZIP] {zip_path}")
+            print(f"[EXTRACTED & DELETED ZIP] {zip_path}")
         except zipfile.BadZipFile:
-            print(f"[BAD ZIP SKIPPED] {zip_path}")
+            print(f"[INVALID ZIP SKIPPED] {zip_path}")
 
-    return extracted_count
+    return extracted_files
 
 
 def verify_image(img_path: Path) -> bool:
     if not img_path.is_file() or img_path.stat().st_size <= 0:
-        print(f"[INVALID/EMPTY FILE] {img_path}")
+        print(f"[EMPTY/MISSING FILE] {img_path}")
         return False
     if img_path.suffix.lower() not in IMAGE_EXTS:
         return False
@@ -70,7 +67,7 @@ def verify_image(img_path: Path) -> bool:
         with Image.open(img_path) as im:
             w, h = im.size
             if w <= 0 or h <= 0:
-                print(f"[ZERO DIMENSIONS] {img_path}")
+                print(f"[INVALID DIMENSIONS] {img_path}")
                 return False
         return True
     except Exception as exc:
@@ -80,20 +77,29 @@ def verify_image(img_path: Path) -> bool:
 
 def build_tags(category: str, title: str) -> list[str]:
     cat_key = category.strip().lower()
-    aliases = GOD_ALIASES.get(cat_key, [])
+    aliases = CATEGORY_ALIASES.get(cat_key, [])
     title_words = [w.lower() for w in title.replace("-", " ").replace("_", " ").split() if len(w) > 1]
-    combined = {cat_key, "wallpaper"} | set(a.lower() for a in aliases) | set(title_words)
+
+    # Agar title ya category mein kisi aur god/category ka naam bhi aata hai, toh uske tags bhi jodein
+    extra_aliases = set()
+    searchable_text = f"{cat_key} {' '.join(title_words)}"
+    for key, vals in CATEGORY_ALIASES.items():
+        if key in searchable_text or any(v.lower() in searchable_text for v in vals if len(v) > 3):
+            extra_aliases.add(key)
+            extra_aliases.update(v.lower() for v in vals)
+
+    combined = {cat_key, "wallpaper"} | {a.lower() for a in aliases} | set(title_words) | extra_aliases
     return sorted(combined)
 
 
 def main():
     extracted = extract_all_zips()
-    print(f"Total files extracted from zips: {extracted}")
+    print(f"Extracted files from ZIPs: {extracted}")
 
     items = []
     idx = 1
-    verified_count = 0
-    skipped_count = 0
+    verified = 0
+    skipped = 0
 
     if WALLS_DIR.exists():
         for folder in sorted(WALLS_DIR.iterdir()):
@@ -102,16 +108,14 @@ def main():
 
             category = folder.name.strip().lower()
             for file_path in sorted(folder.rglob("*")):
-                if not file_path.is_file():
-                    continue
-                if file_path.suffix.lower() not in IMAGE_EXTS:
+                if not file_path.is_file() or file_path.suffix.lower() not in IMAGE_EXTS:
                     continue
 
                 if not verify_image(file_path):
-                    skipped_count += 1
+                    skipped += 1
                     continue
 
-                verified_count += 1
+                verified += 1
                 rel_from_walls = file_path.relative_to(WALLS_DIR).as_posix()
                 encoded_rel = "/".join(quote(part) for part in rel_from_walls.split("/"))
 
@@ -128,9 +132,9 @@ def main():
                 idx += 1
 
     OUT_JSON.write_text(json.dumps(items, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"Verified images: {verified_count} | Skipped: {skipped_count} | JSON items: {len(items)}")
+    print(f"Verified: {verified} | Skipped: {skipped} | Total JSON items: {len(items)}")
 
 
 if __name__ == "__main__":
     main()
-      
+    
