@@ -12,6 +12,7 @@ ZIPS_DIR = Path("incoming_zips")
 OUT_JSON = Path("wallpapers.json")
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+IGNORE_FILENAMES = {"fake.page", ".gitkeep", ".ds_store", "thumbs.db"}
 SIMILARITY_THRESHOLD = 0.65
 
 
@@ -34,7 +35,6 @@ def match_best_category(raw_text: str) -> tuple[str, list[str]]:
 
     best_key = cleaned
     best_score = 0.0
-
     tokens = [t for t in cleaned.split() if len(t) >= 3] + [cleaned]
 
     for key, aliases in CATEGORY_ALIASES.items():
@@ -53,7 +53,7 @@ def match_best_category(raw_text: str) -> tuple[str, list[str]]:
 
 
 def extract_single_zip(zip_path: Path, folder_hint: str | None) -> int:
-    count = 0
+    extracted_images = 0
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
             for member in zf.infolist():
@@ -65,63 +65,66 @@ def extract_single_zip(zip_path: Path, folder_hint: str | None) -> int:
                     continue
 
                 parts = list(rel.parts)
-                if any(p.startswith("__MACOSX") or p == ".DS_Store" for p in parts):
+                if any(p.startswith("__MACOSX") or p.lower() in IGNORE_FILENAMES for p in parts):
                     continue
 
-                if parts and parts[0].lower() == "walls":
-                    parts = parts[1:]
-                if not parts:
+                file_name = parts[-1]
+                ext = Path(file_name).suffix.lower()
+                if ext not in IMAGE_EXTS:
                     continue
 
-                if folder_hint:
-                    matched_cat, _ = match_best_category(folder_hint)
-                    if parts and match_best_category(parts[0])[0] == matched_cat and len(parts) > 1:
-                        parts = parts[1:]
-                    dest = WALLS_DIR / matched_cat / Path(*parts)
-                else:
-                    if len(parts) >= 2:
-                        matched_cat, _ = match_best_category(parts[0])
-                        dest = WALLS_DIR / matched_cat / Path(*parts[1:])
-                    else:
-                        stem_cat, _ = match_best_category(Path(parts[0]).stem)
-                        dest = WALLS_DIR / stem_cat / parts[0]
+                target_cat = (folder_hint or "general").strip().lower().replace(" ", "_")
+                matched_cat, _ = match_best_category(target_cat)
+                final_folder = matched_cat if matched_cat != "general" else target_cat
+
+                # Zip ke andar jitni bhi images hain, unhe clean tareeke se final_folder mein daalein
+                dest = WALLS_DIR / final_folder / file_name
+                if dest.exists():
+                    stem = Path(file_name).stem
+                    counter = 1
+                    while (WALLS_DIR / final_folder / f"{stem}_{counter}{ext}").exists():
+                        counter += 1
+                    dest = WALLS_DIR / final_folder / f"{stem}_{counter}{ext}"
 
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 with zf.open(member) as src, open(dest, "wb") as dst:
                     dst.write(src.read())
-                count += 1
+                extracted_images += 1
 
         zip_path.unlink(missing_ok=True)
-        print(f"[EXTRACTED & REMOVED ZIP] {zip_path} ({count} files)")
+        print(f"[EXTRACTED & REMOVED ZIP] {zip_path} -> {extracted_images} images")
     except zipfile.BadZipFile:
         print(f"[INVALID ZIP SKIPPED] {zip_path}")
 
-    return count
+    return extracted_images
 
 
 def extract_all_zips() -> int:
     WALLS_DIR.mkdir(parents=True, exist_ok=True)
-    extracted_total = 0
+    total_extracted = 0
 
     if WALLS_DIR.exists():
         for sub in sorted(WALLS_DIR.iterdir()):
             if sub.is_dir():
-                for zp in sorted(sub.glob("*.zip")):
+                for zp in sorted(sub.rglob("*.zip")):
                     if zp.is_file():
-                        extracted_total += extract_single_zip(zp, folder_hint=sub.name)
+                        total_extracted += extract_single_zip(zp, folder_hint=sub.name)
 
     extra_zips = list(Path(".").glob("*.zip"))
     if ZIPS_DIR.exists():
-        extra_zips.extend(ZIPS_DIR.glob("*.zip"))
+        extra_zips.extend(ZIPS_DIR.rglob("*.zip"))
 
     for zp in sorted(set(extra_zips)):
         if zp.is_file():
-            extracted_total += extract_single_zip(zp, folder_hint=None)
+            hint = zp.parent.name if zp.parent != Path(".") else None
+            total_extracted += extract_single_zip(zp, folder_hint=hint)
 
-    return extracted_total
+    return total_extracted
 
 
 def verify_image(img_path: Path) -> bool:
+    if img_path.name.lower() in IGNORE_FILENAMES:
+        return False
     if not img_path.is_file() or img_path.stat().st_size <= 0:
         print(f"[EMPTY/MISSING FILE] {img_path}")
         return False
@@ -167,7 +170,7 @@ def build_tags(raw_category: str, title: str) -> tuple[str, list[str]]:
 
 def main():
     extracted = extract_all_zips()
-    print(f"Extracted files from ZIPs: {extracted}")
+    print(f"Total images extracted from ZIPs: {extracted}")
 
     items = []
     idx = 1
@@ -181,7 +184,9 @@ def main():
 
             raw_folder_name = folder.name.strip().lower()
             for file_path in sorted(folder.rglob("*")):
-                if not file_path.is_file() or file_path.suffix.lower() not in IMAGE_EXTS:
+                if not file_path.is_file():
+                    continue
+                if file_path.name.lower() in IGNORE_FILENAMES or file_path.suffix.lower() not in IMAGE_EXTS:
                     continue
 
                 if not verify_image(file_path):
@@ -210,3 +215,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
