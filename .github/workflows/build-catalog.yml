@@ -1,0 +1,39 @@
+name: Setup Folders, Process Assets & Build wallpapers.json
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Pillow
+        run: pip install pillow
+
+      - name: Create god/category folders with fake.file and fake.imsge
+        run: python setup_folders.py
+
+      - name: Extract ZIPs, verify direct images, and build wallpapers.json
+        run: python process_assets.py
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: sync folders, process assets, and update wallpapers.json" || exit 0
+          git push
+          
