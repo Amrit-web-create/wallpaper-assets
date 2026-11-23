@@ -1,0 +1,42 @@
+name: Extract ZIP, Verify Wallpapers & Generate JSON
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '*.zip'
+      - 'incoming_zips/**'
+      - 'walls/**'
+      - 'process_wallpapers.py'
+      - 'god_aliases.py'
+  workflow_dispatch:
+
+jobs:
+  process-catalog:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Pillow for image verification
+        run: pip install pillow
+
+      - name: Extract ZIPs, verify files, and build wallpapers.json
+        run: python process_wallpapers.py
+
+      - name: Commit and push extracted walls and wallpapers.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: extract wallpapers, verify assets, and update wallpapers.json" || exit 0
+          git push
+          
