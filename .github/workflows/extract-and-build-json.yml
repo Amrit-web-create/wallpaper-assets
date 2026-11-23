@@ -1,4 +1,4 @@
-name: Extract ZIP, Verify & Generate wallpapers.json
+name: Prepare Folders, Extract ZIPs & Build JSON
 
 on:
   push:
@@ -7,6 +7,7 @@ on:
       - '*.zip'
       - 'incoming_zips/**'
       - 'walls/**'
+      - 'prepare_folders.py'
       - 'process_wallpapers.py'
       - 'catalog_aliases.py'
   workflow_dispatch:
@@ -29,14 +30,17 @@ jobs:
       - name: Install Pillow for image verification
         run: pip install pillow
 
-      - name: Extract ZIPs, verify files, and build wallpapers.json
+      - name: Ensure all deity/category folders have fake.page
+        run: python prepare_folders.py
+
+      - name: Extract ZIPs, verify all images, and build wallpapers.json
         run: python process_wallpapers.py
 
-      - name: Commit and push extracted walls and wallpapers.json
+      - name: Commit and push folders, extracted images, and wallpapers.json
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "chore: extract wallpapers, verify files, and update wallpapers.json" || exit 0
+          git commit -m "chore: sync deity folders with fake.page, extract zips, and update wallpapers.json" || exit 0
           git push
           
