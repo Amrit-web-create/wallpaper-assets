@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sanatan Wallpaper</title>
+<meta name="theme-color" content="#ffffff">
+<style>
+  :root { --bg:#fff; --text:#111114; --muted:#6b6b76; --line:#ececf0; --card:#f4f4f6; --btn:#111114; --btnText:#fff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0b0b0d; --text:#f4f4f6; --muted:#9a9aa3; --line:#26262b; --card:#17171a; --btn:#f4f4f6; --btnText:#111114; }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding:22px 20px 6px; font-family: Georgia, "Times New Roman", serif; font-size:24px; font-weight:700; }
+  #grid { display:grid; gap:14px; padding:12px 16px 120px; grid-template-columns: 1fr; max-width:980px; margin:0 auto; }
+  #grid.multi { grid-template-columns: repeat(2, 1fr); }
+  @media (min-width: 700px) { #grid.multi { grid-template-columns: repeat(3, 1fr); } #grid { grid-template-columns: minmax(0,420px); justify-content:center; } }
+  .card { position:relative; background:var(--card); border-radius:26px; overflow:hidden; border:1px solid var(--line); }
+  .card img { display:block; width:100%; height:auto; background:var(--card); min-height:240px; object-fit:cover; }
+  .tick { position:absolute; right:10px; bottom:10px; width:30px; height:30px; border-radius:10px; background:var(--btn); color:var(--btnText);
+          display:none; align-items:center; justify-content:center; font-size:18px; font-weight:700; }
+  .multi .card.sel .tick { display:flex; }
+  .multi .card.sel { outline:3px solid var(--text); outline-offset:-3px; }
+  .bar { position:fixed; left:0; right:0; bottom:0; padding:14px 16px calc(14px + env(safe-area-inset-bottom)); background:linear-gradient(transparent, var(--bg) 35%); display:flex; justify-content:center; }
+  button { appearance:none; border:0; cursor:pointer; background:var(--btn); color:var(--btnText); font-size:17px; font-weight:700;
+           padding:16px 34px; border-radius:999px; width:100%; max-width:420px; }
+  button:disabled { opacity:.6; }
+  .msg { text-align:center; padding:60px 24px; color:var(--muted); font-size:17px; }
+</style>
+</head>
+<body>
+<header>Sanatan Wallpaper</header>
+<div id="grid"></div>
+<div class="bar"><button id="dl" hidden>Download</button></div>
+<script>
+(function () {
+  var grid = document.getElementById('grid');
+  var btn = document.getElementById('dl');
+  // only images hosted on this same site are allowed
+  var urls = new URLSearchParams(location.search).getAll('i').filter(function (u) {
+    try { return new URL(u).origin === location.origin; } catch (e) { return false; }
+  });
+  if (!urls.length) { grid.innerHTML = '<div class="msg">This link has no wallpaper.</div>'; return; }
+
+  var multi = urls.length > 1;
+  if (multi) grid.className = 'multi';
+  var selected = new Set(urls.map(function (_, i) { return i; }));
+
+  urls.forEach(function (u, i) {
+    var c = document.createElement('div');
+    c.className = 'card sel';
+    c.innerHTML = '<img alt="Wallpaper" loading="lazy"><div class="tick">&#10003;</div>';
+    c.querySelector('img').src = u;
+    if (multi) c.addEventListener('click', function () {
+      if (selected.has(i)) { if (selected.size > 1) { selected.delete(i); c.classList.remove('sel'); } }
+      else { selected.add(i); c.classList.add('sel'); }
+      label();
+    });
+    grid.appendChild(c);
+  });
+
+  function label() {
+    btn.hidden = false;
+    btn.textContent = multi ? 'Download ' + selected.size + (selected.size > 1 ? ' wallpapers' : ' wallpaper') : 'Download';
+  }
+  label();
+
+  function save(u) {
+    return fetch(u).then(function (r) { return r.blob(); }).then(function (b) {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(b);
+      a.download = u.split('/').pop().split('?')[0] || 'wallpaper.jpg';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+    });
+  }
+
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    var list = Array.from(selected).sort().map(function (i) { return urls[i]; });
+    var chain = Promise.resolve();
+    list.forEach(function (u) { chain = chain.then(function () { return save(u); }).then(function () { return new Promise(function (r) { setTimeout(r, 400); }); }); });
+    chain.catch(function () { window.open(list[0], '_blank'); }).then(function () { btn.disabled = false; });
+  });
+})();
+</script>
+</body>
+</html>
